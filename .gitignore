@@ -40,3 +40,4 @@ rsconnect/
 *.xlsx
 *.xls
 *.txt
+.DS_Store
