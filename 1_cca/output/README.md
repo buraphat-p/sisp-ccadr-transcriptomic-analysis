@@ -1,4 +1,3 @@
-# /1_cca
+# /1_cca/output
 # Introduction
-This objective of this module was to retrieve data of RNA-seq from basepair and removed batch effect.
-
+This folder is a result for /1_cca/code/1_cca.rmd script. There are three file here.
