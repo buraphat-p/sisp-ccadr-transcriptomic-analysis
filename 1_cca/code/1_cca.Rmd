@@ -668,3 +668,30 @@ output: html_notebook
             ,paste0(fl.output,'/repl_fl_combat_ccadr_log2tpm_PB_',Sys.Date(),'.csv'))
 ```
 
+```{r median of expression}
+################################################## 
+################median of expression##############  
+################################################## 
+  ##1_cca_log2tpm_exp
+  dat = repl_fl_combat_ccadr_tpm
+  mt.dat = metadata_master %>% 
+            filter(validation,ccadr_project) %>% 
+            mutate(q = paste0(cellline,"_",treatment)) %>% 
+            group_by(q)
+  
+  median_log2tpm_combat = left_join(dat %>% 
+                               gather(key = colname, value = exp_tpm, -Symbol)
+                            ,mt.dat %>% 
+                              select(colname, q)) %>% 
+                    group_by(q, Symbol) %>% 
+                    mutate(med.exp = median(exp_tpm)) %>% 
+                    select(Symbol,q,med.exp) %>% 
+                    group_by() %>% distinct() %>% 
+                    spread(key = q, value = med.exp)
+  #write median_log2tpm_combat
+  write_csv(median_log2tpm_combat
+            ,paste0(fl.output,'/median_log2tpm_combat_PB_',Sys.Date(),'.csv'))
+  
+##################################################  
+```
+
