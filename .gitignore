@@ -42,3 +42,4 @@ rsconnect/
 *.txt
 .DS_Store
 *.pdf
+*.ini
