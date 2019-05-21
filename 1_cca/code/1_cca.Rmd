@@ -665,7 +665,7 @@ output: html_notebook
   #####################
   
    write_csv(repl_fl_combat_ccadr_tpm
-            ,paste0(fl.output,'/repl_fl_combat_ccadr_log2tpm_PB_',Sys.Date(),'.csv'))
+            ,paste0(fl.output,'/repl_fl_combat_ccadr_log2tpm_PB_','.csv'))
 ```
 
 ```{r median of expression}
@@ -690,7 +690,7 @@ output: html_notebook
                     spread(key = q, value = med.exp)
   #write median_log2tpm_combat
   write_csv(median_log2tpm_combat
-            ,paste0(fl.output,'/median_log2tpm_combat_PB_',Sys.Date(),'.csv'))
+            ,paste0(fl.output,'/median_log2tpm_combat_PB_','.csv'))
   
 ##################################################  
 ```
