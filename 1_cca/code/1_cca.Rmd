@@ -657,7 +657,7 @@ output: html_notebook
             ,ncol = 2,nrow = 2
             , labels = c("A", "B", "C","D"))
   
-  ggsave(filename =  paste0(fl.output.supl_fig,"/Supplementary Figure Supl.fig before_after_combat_",Sys.Date(),".pdf")
+  ggsave(filename =  paste0(fl.output.supl_fig,"/Supplementary Figure Supl.fig before_after_combat_",".pdf")
          ,plot = q
          ,device = "pdf"
          ,width = 12
