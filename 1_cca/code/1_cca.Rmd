@@ -1,0 +1,670 @@
+---
+title: "1_cca"
+output: html_notebook
+---
+
+
+###set workspace and library###
+```{r Introduction, message=FALSE, warning=FALSE, paged.print=FALSE}
+#########/1_cca########
+##################################################
+  graphics.off()
+  rm(list=ls())
+  glob_wd = "D:/Github"
+  setwd(glob_wd)
+  set.seed(1234)
+  
+  path = "/1_cca"
+  wd = "/sisp-ccadr-transcriptomic-analysis"
+  my_wd = paste(glob_wd,wd,path,sep = "")
+  fl.output = paste(my_wd,"/output",sep = "")
+  fl.input =  paste(my_wd,"/input",sep = "")
+  set.seed(1234)
+
+##################################################  
+######################library##################### 
+##################################################  
+  
+  library("openxlsx")
+  library("dplyr")
+  library("tidyverse")
+  library("tidyr")
+  library("psych")
+  library("caret")
+  library("readr")
+  library("ggpubr")
+  library("sva")
+  library("factoextra")
+  library("DESeq")
+  library("DESeq2")
+  library("BiocParallel")
+  library("ape")
+  library("pamr")
+  library("dendextend")
+  library("plotly")
+  
+##################################################  
+  
+```
+
+###load metadata###
+```{r Meta_data, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################  
+####################meta_data##################### 
+##################################################  
+  
+  metadata_master = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_master"
+                                                         ,".xlsx")))
+  metadata_cellline = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_cellline"
+                                                         ,".xlsx")))
+  
+  metadata_basepair = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_basepair"
+                                                           ,".xlsx")))
+  metadata_master = metadata_master %>% filter(validation, ccadr_project)
+```
+
+###RetrieveRNA-seqdata (TPM + count)###
+```{r Retrieve RNA-seq data, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################    
+##################retrieve_rna_seq################# 
+##################################################  
+  ####tpm
+  retrive_data_tpm <- function(project
+                           ,cutoff = cut_point
+                           ,l.base = 2)
+  {
+      fl.input.bp = paste0(fl.input,"/_basepair")
+      fl.project = project
+      
+      lst = list.files(paste0(fl.input.bp,"/",fl.project)
+                 ,pattern = ".txt")
+      
+      ###find genelist
+      gene.list = as.character()
+        
+      for(i in 1:length(lst))  
+      {
+        dum = read_delim(paste0(fl.input.bp,"/",fl.project,"/",lst[i])
+                         ,delim = "\t")
+        print(i)
+        
+        gene.list = c(gene.list,dum$Id)
+      }
+      gene.list = sort(unique(gene.list))
+    
+      dat = as.tibble(gene.list)
+      names(dat) = "Symbol"
+      
+      ###add_val by TPM
+      for(i in 1:length(lst))  
+      {
+        dum = read_delim(paste0(fl.input.bp,"/",fl.project,"/",lst[i])
+                         ,delim = "\t")
+        dum2 = unlist(strsplit(lst[i],split = "[.]"))[1]
+        
+        dum3 = dum %>% dplyr::select(Symbol,TPM)
+        
+        names(dum3) = c("Symbol",paste0(dum2))
+        dat = full_join(dat,dum3)
+        
+      }
+      ###recheck cellline with master 
+      print(length(intersect(colnames(dat)[2:dim(dat)[2]],metadata_master$colname)) == length(lst))
+      dat
+  }
+  
+  dum = retrive_data_tpm("SO_6831")
+  dum2 = retrive_data_tpm("SO_8069")
+  
+  dum = dum %>% filter(Symbol %in% intersect(dum$Symbol,dum2$Symbol))
+  dum2 = dum2 %>% filter(Symbol %in% intersect(dum$Symbol,dum2$Symbol))
+  ccadr_tpm_dat = full_join(dum,dum2)
+  
+  rm(dum,dum2)
+  
+  ####count
+  retrive_data_count <- function(project
+                                 ,l.base = 2)
+  {
+    fl.input.bp = paste0(fl.input,"/_basepair")
+    fl.project = project
+    
+    lst = list.files(paste0(fl.input.bp,"/",fl.project)
+                     ,pattern = ".txt")
+    
+    ###find genelist
+    gene.list = as.character()
+    
+    for(i in 1:length(lst))  
+    {
+      dum = read_delim(paste0(fl.input.bp,"/",fl.project,"/",lst[i])
+                       ,delim = "\t")
+      print(i)
+      
+      gene.list = c(gene.list,dum$Id)
+    }
+    gene.list = sort(unique(gene.list))
+    
+    dat = as.tibble(gene.list)
+    names(dat) = "Symbol"
+    
+    ###add_val by Count
+    for(i in 1:length(lst))  
+    {
+      dum = read_delim(paste0(fl.input.bp,"/",fl.project,"/",lst[i])
+                       ,delim = "\t"
+                       )
+      dum2 = unlist(strsplit(lst[i],split = "[.]"))[1]
+      
+      dum3 = dum %>% dplyr::select(Symbol,Count)
+      names(dum3) = c("Symbol",paste0(dum2))
+      dat = full_join(dat,dum3)
+      
+    }
+    ###recheck cellline with master 
+    print(length(intersect(colnames(dat)[2:dim(dat)[2]],metadata_master$colname)) == length(lst))
+    dat
+  }
+  
+  dum = retrive_data_count("SO_6831")
+  dum2 = retrive_data_count("SO_8069")
+  
+  dum = dum %>% filter(Symbol %in% intersect(dum$Symbol,dum2$Symbol))
+  dum2 = dum2 %>% filter(Symbol %in% intersect(dum$Symbol,dum2$Symbol))
+  ccadr_count_dat = full_join(dum,dum2)
+  
+  rm(dum,dum2)
+  
+  ccadr_count_dat = ccadr_count_dat %>% 
+                        gather(key = cellname, value = count,-Symbol) %>% 
+                        group_by(cellname) %>%
+                        filter(cellname %in% (metadata_master %>% 
+                                               filter(ccadr_project) %>% 
+                                               pull(colname))) %>%
+                        spread(key = cellname, value = count)
+  
+  ccadr_tpm_dat = ccadr_tpm_dat %>% 
+                      gather(key = cellname, value = count,-Symbol) %>% 
+                      group_by(cellname) %>%
+                      filter(cellname %in% (metadata_master %>% 
+                                              filter(ccadr_project) %>% 
+                                              pull(colname))) %>%
+                      spread(key = cellname, value = count)
+
+
+################################################## 
+  
+  ccadr_count_dat
+  ccadr_tpm_dat
+
+```
+
+###Filter very low gene expression###
+```{r filter_out, message=FALSE, warning=FALSE, paged.print=FALSE}
+  
+  cut_point_tpm = 0
+  cut_point_count = 0
+
+##################################################
+####################filter out#################### 
+##################################################   
+  ccadr_count = ccadr_count_dat %>% 
+                  gather(key = cellname, value = count,-Symbol) %>% 
+                  group_by(Symbol) %>% 
+                  mutate(median_count = median(count)) %>% 
+                  filter(median_count > cut_point_count) 
+  
+  ccadr_count = ccadr_count  %>% 
+                  dplyr::select(-median_count) %>% 
+                  spread(key = cellname,value = count)
+  
+  
+  ccadr_tpm = ccadr_tpm_dat %>% gather(key = cellname, value = tpm,-Symbol)  %>% 
+    group_by(Symbol) %>% 
+    mutate(median_tpm = median(tpm)) %>% 
+    filter(median_tpm > cut_point_tpm)
+  
+  
+  ccadr_tpm = ccadr_tpm %>% dplyr::select(-median_tpm) %>% spread(key = cellname,value = tpm)
+  
+  ccadr_tpm = ccadr_tpm %>% group_by()
+  ccadr_count = ccadr_count %>% group_by()
+################################################## 
+  
+  ccadr_count
+  ccadr_tpm
+```
+
+###Transformation to log2(TPM+1)###
+```{r trasformation, echo=FALSE, message=FALSE, warning=FALSE, paged.print=FALSE}
+################################################## 
+##################transformation##################
+##################################################   
+  
+
+  dum = colSums(ccadr_tpm %>% group_by() %>% dplyr::select(-Symbol))/1000000*100
+  dum = as.data.frame(dum)
+  colnames(dum) = "sum_tpm"
+  #####tpm not transform
+    tpm_weight = ccadr_tpm %>% dplyr::select(-1)
+    tpm_weight = as.numeric(as.matrix(tpm_weight))
+    tpm_weight = as.data.frame(tpm_weight)
+    #####log2 transform
+    dum = as.data.frame(ccadr_tpm$Symbol)
+    names(dum) = "Symbol"
+    log_ccadr_tpm = as_tibble(cbind(dum
+                                    ,log(ccadr_tpm %>% dplyr::select(-Symbol) + 1
+                                         ,2)))
+    
+      log_weight = as.data.frame(as.numeric(as.matrix(log_ccadr_tpm %>% dplyr::select(-Symbol))))
+      names(log_weight) = "log_weight"
+      
+   ccadr_tpm_log2 = ccadr_tpm %>% filter(Symbol %in% ccadr_tpm$Symbol) %>% 
+      gather(-Symbol,key = "cellline", value = "tpm") %>% 
+      mutate(log2tpm = log2(tpm+1)) %>% dplyr::select(-tpm) %>% 
+      spread(key = cellline, value = log2tpm)
+   
+    dt = ccadr_tpm
+    dtname = "ccadr_tpm"
+    
+##################################################   
+```
+
+###Apply sva/Combat###
+```{r batch effect removal, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################        
+######################sva######################### 
+##################################################  
+  after_sva <- function(dt,dtname)
+  {
+
+    
+    
+    dat = as.data.frame(dt %>% dplyr::select(-1))
+    rownames(dat) = as.character(dt$Symbol)
+    
+    cl = colnames(dat)
+    cl_meta = full_join(metadata_master %>% dplyr::select(colname, project,cellline,treatment) 
+                        ,metadata_cellline %>% dplyr::select(cellline
+                                                      ,organ
+                                                      ,cca_source
+
+                                                      ,celltype))
+    
+    
+    cl_meta = cl_meta %>% filter(colname %in% cl) %>% distinct()  %>% dplyr::select(-cellline)
+    cl_meta = as.data.frame(cl_meta)
+    rownames(cl_meta) = cl_meta$colname
+    
+    cl_meta$project = as.factor(cl_meta$project)
+    cl_meta$celltype = as.factor(cl_meta$celltype)
+    cl_meta$organ = as.factor(cl_meta$organ)
+    cl_meta$cca_source = as.factor(cl_meta$cca_source)
+    cl_meta$treatment = as.factor(cl_meta$treatment)
+    cl_meta = cl_meta[,-1]
+    cl_meta$id = 1:dim(cl_meta)[1]
+    cl_meta$batch = as.numeric(cl_meta$project)
+    
+    cl_meta$final = as.factor(paste(as.character(cl_meta$celltype)
+                                    ,
+                                    as.character(cl_meta$treatment)
+                                    ,sep = '_'))
+    cl_meta = cl_meta[,c("id","batch","celltype","treatment","final")]
+    colnames(cl_meta) = c("sample","batch","celltype","treatment","final")
+    
+    modcombat = model.matrix(~final, data=cl_meta)
+    
+    edata = as.matrix(dat)
+    
+    cl_meta = cl_meta[colnames(dat),]
+    
+    set.seed(1234)
+    combat_edata = ComBat(dat=edata
+                          , batch=cl_meta$batch
+                          , mod=modcombat
+                          , par.prior=TRUE  , prior.plots=FALSE )
+    
+  }
+
+  combat_ccadr_tpm <- after_sva(ccadr_tpm_log2,paste0("ccadr_tpm","_combat"))
+##################################################  
+  
+  fl_combat_ccadr_tpm <- (combat_ccadr_tpm) 
+```
+
+###shifted from negative expression###
+```{r shifted from negative expression, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################   
+#########shifted from negative expression#########
+##################################################   
+  
+  #replace <0 with 0
+  repl_fl_combat_ccadr_tpm = as_tibble(cbind(data.frame(Symbol = rownames(fl_combat_ccadr_tpm)),fl_combat_ccadr_tpm)) %>% 
+                              gather(key = "celline"
+                                     ,value = "log2tpm_after"
+                                     , -Symbol) %>% 
+                              mutate(lg_log2tpm_after = log2tpm_after <0) %>% 
+                              mutate(log2tpm_after_rl = if_else(log2tpm_after < 0
+                                                                ,0
+                                                                ,log2tpm_after)) %>% 
+                              dplyr::select(Symbol
+                                     ,celline
+                                     ,log2tpm_after_rl) %>% 
+                              spread(key = celline,value = log2tpm_after_rl)
+##################################################   
+```
+
+###Generate Figure###
+```{r Generate Figure, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################        
+################generate_figure################### 
+##################################################        
+  ##supl fig
+  #####################
+  fl.output.supl_fig = paste0(fl.output)
+  dum_col = colnames(ccadr_tpm_log2)[-1]
+  dum_col_dat = data.frame(colname = dum_col
+                           #,batch = paste0("SO_",unlist(lapply(strsplit(dum_col,"[_]"),function(x)(x[2]))))
+                           #,cellline = unlist(lapply(strsplit(dum_col,"[_]"),function(x)(x[3])))
+                           )
+  new_colname = as_tibble(dum_col_dat) %>% 
+                  left_join(.,metadata_master) %>% 
+                  mutate(batch = ifelse(project == "SO_6831","batch1","batch2")) %>% 
+                  dplyr::select(colname,full_name,batch) %>% 
+                                mutate(colname2 = paste0(batch,"_",full_name)) %>% 
+                  dplyr::select(colname,colname2)
+  dat_new_colname = as.data.frame(new_colname)
+  rownames(dat_new_colname) = dat_new_colname$colname
+  #####################
+  
+  #####################
+  ######prior_sva######
+  #####################
+  dt = ccadr_tpm_log2
+  dtname =  "ccadr_log2tpm"
+    
+    
+    ###calculate %pcv of each gene in rep
+    metadata_rep1 = metadata_master %>% 
+      dplyr::select(colname,  cellline, full_name, rep, project) %>% 
+      filter(colname %in% colnames(dt)[-1]) %>%
+      arrange(colname) %>% filter(project %in% "SO_6831")
+    
+    metadata_rep2 = metadata_master %>% 
+      dplyr::select(colname,  cellline, full_name, rep, project) %>% 
+      filter(colname %in% colnames(dt)[-1]) %>%
+      arrange(colname) %>% filter(project %in% "SO_8069")
+    
+    #combind data
+    z_mat <- function(dt = dt, prt
+                      ,n 
+                      ,l.base = 2
+    )
+    {
+      rep_dat = dt %>% dplyr::select(Symbol
+                              ,as.data.frame(metadata_master %>% 
+                                               filter(project == prt,ccadr_project) %>% 
+                                               dplyr::select(colname)
+                              )[,1]
+      )
+      dat1 = as.data.frame(rep_dat)
+      print(dim(rep_dat))
+      r.name = dat1[,1]
+      dat1 = dat1[,-1]
+      rownames(dat1) = r.name
+      
+      dat1 = log(dat1 +1,base = l.base)
+      u = t(scale(t(dat1)))
+      u = u[,n]
+      print(dim(u))
+      u
+    }
+    
+    combind_mat <- function(dt = dt,prt
+                            ,n)
+    {
+      rep_dat = dt %>% dplyr::select(Symbol
+                              ,as.data.frame(metadata_master %>% 
+                                               filter(project == prt,ccadr_project) %>% 
+                                               dplyr::select(colname)
+                              )[,1]
+      )
+      dat1 = as.data.frame(rep_dat)
+      print(dim(rep_dat))
+      r.name = dat1[,1]
+      dat1 = dat1[,-1]
+      rownames(dat1) = r.name
+      
+      dat1[,n]
+    }
+    
+    
+    c_dat1 = combind_mat(dt = dt, prt = "SO_6831"
+                         ,n = metadata_rep1$colname)
+    
+    c_dat2 = combind_mat(dt = dt,prt = "SO_8069"
+                         ,n = metadata_rep2$colname)
+    
+    dat = cbind(c_dat1,c_dat2)
+    #pca
+    
+    
+    
+    res.pca = prcomp(t(dat)
+                     ,center = TRUE
+                     ,scale = TRUE)
+    
+    plot(cumsum((res.pca$sdev)^2/sum((res.pca$sdev)^2))
+         ,xlab = "PC"
+         ,ylab = "Cummulation % var explain"
+         ,main = paste0("Cummulation % var explain | ",dtname))
+    factoextra::fviz_eig(res.pca)
+    
+    res.pca.cell = as.data.frame(res.pca$x[,1:2])
+    res.pca.cell = cbind(rownames(res.pca.cell),res.pca.cell)
+    colnames(res.pca.cell) = c("colname","PC1","PC2")
+    res.pca.cell = as_tibble(res.pca.cell) %>% mutate(colname = as.character(colname))
+    
+    res.pca.cell = left_join(res.pca.cell,metadata_master) %>% mutate(project = ifelse(project == "SO_6831","batch1","batch2"))
+    p.pca.prior =  ggplot(res.pca.cell,aes(x = PC1, y = PC2, color = project, label = full_name)) + 
+      geom_point() + 
+      ggtitle(paste0("PCA of 2 batch | before Combat | ",dtname)) +
+      ggrepel::geom_text_repel(aes(label = full_name)
+                               ,box.padding   = 0.1
+                               ,point.padding = 0.2
+                               ,seed = set.seed(1234)
+                               ,segment.size = 1
+                               ,size = 5
+      ) + geom_path(aes(group = abbv_name)) +
+      xlab(paste0("PC1 (",round(((res.pca$sdev)^2/sum((res.pca$sdev)^2))[1]*100,2)," %)")) +
+      ylab(paste0("PC1 (",round(((res.pca$sdev)^2/sum((res.pca$sdev)^2))[2]*100,2)," %)"))
+     
+  
+     #tsne
+    set.seed(42)
+    dat_tsne = Rtsne::Rtsne(t(dat)
+                            , dims = 2
+                            , perplexity=10
+                            , verbose=FALSE
+                            , max_iter = 5000
+                            , pca_center = TRUE
+                            , pca_scale = TRUE
+                            
+                            ##,theta = 0
+    )
+    xy_tsne = dat_tsne$Y
+    rownames(xy_tsne) = colnames(dat)
+    xy_tsne = as.data.frame(xy_tsne)
+    
+    res.pca.cell = cbind(rownames(xy_tsne),xy_tsne)
+    colnames(res.pca.cell) = c("colname","tsne1","tsne2")
+    res.pca.cell = as_tibble(res.pca.cell) %>% mutate(colname = as.character(colname))
+    
+    res.pca.cell = left_join(res.pca.cell,metadata_master)  %>% mutate(project = ifelse(project == "SO_6831","batch1","batch2"))
+    
+    
+    p.tsne.prior =  ggplot(res.pca.cell,aes(x = tsne1, y = tsne2
+                                 , color = project
+                                 , label = full_name)) + 
+      geom_point() +
+      ggtitle(paste0("tsne of 2 batch | before Combat | ",dtname)) +
+      ggrepel::geom_text_repel(aes(label = full_name)
+                               ,box.padding   = 0.1
+                               ,point.padding = 0.2
+                               ,seed = set.seed(1234)
+                               ,segment.size = 1
+                               ,size = 5
+      ) + 
+      geom_path(aes(group = abbv_name))
+    
+  #####################
+    
+  #####################
+  ######after_sva######
+  #####################
+  dt = ccadr_tpm_log2
+  dtname = paste0("ccadr_log2tpm","_combat")
+
+
+    dat = as.data.frame(dt %>% dplyr::select(-1))
+    rownames(dat) = as.character(dt$Symbol)
+    
+    cl = colnames(dat)
+    cl_meta = full_join(metadata_master %>% dplyr::select(colname, project,cellline,treatment) 
+                        ,metadata_cellline %>% dplyr::select(cellline
+                                                      ,organ
+                                                      ,cca_source
+                                                      
+                                                      ,celltype))
+    
+    
+    cl_meta = cl_meta %>% filter(colname %in% cl) %>% distinct()  %>% dplyr::select(-cellline)
+    cl_meta = as.data.frame(cl_meta)
+    rownames(cl_meta) = cl_meta$colname
+    
+    cl_meta$project = as.factor(cl_meta$project)
+    cl_meta$celltype = as.factor(cl_meta$celltype)
+    cl_meta$organ = as.factor(cl_meta$organ)
+    cl_meta$cca_source = as.factor(cl_meta$cca_source)
+    cl_meta$treatment = as.factor(cl_meta$treatment)
+    cl_meta = cl_meta[,-1]
+    cl_meta$id = 1:dim(cl_meta)[1]
+    cl_meta$batch = as.numeric(cl_meta$project)
+    
+    cl_meta$final = as.factor(paste(as.character(cl_meta$celltype)
+                                    ,
+                                    as.character(cl_meta$treatment)
+                                    ,sep = '_'))
+    cl_meta = cl_meta[,c("id","batch","celltype","treatment","final")]
+    colnames(cl_meta) = c("sample","batch","celltype","treatment","final")
+    
+    modcombat = model.matrix(~final, data=cl_meta)
+    
+    edata = as.matrix(dat)
+    
+    cl_meta = cl_meta[colnames(dat),]
+    
+    set.seed(1234)
+    combat_edata = ComBat(dat=edata
+                          , batch=cl_meta$batch
+                          , mod=modcombat
+                          , par.prior=TRUE  , prior.plots=FALSE )
+    #pca
+    dat = combat_edata
+    res.pca = prcomp(t(dat)
+                     ,center = TRUE
+                     ,scale = TRUE)
+    
+    plot(cumsum((res.pca$sdev)^2/sum((res.pca$sdev)^2))
+         ,xlab = "PC"
+         ,ylab = "Cummulation % var explain"
+         ,main = paste0("Cummulation % var explain | ",dtname))
+    factoextra::fviz_eig(res.pca)
+    
+    res.pca.cell = as.data.frame(res.pca$x[,1:2])
+    res.pca.cell = cbind(rownames(res.pca.cell),res.pca.cell)
+    colnames(res.pca.cell) = c("colname","PC1","PC2")
+    res.pca.cell = as_tibble(res.pca.cell) %>% mutate(colname = as.character(colname))
+    
+    res.pca.cell = left_join(res.pca.cell,metadata_master) %>% mutate(project = ifelse(project == "SO_6831","batch1","batch2"))
+    
+    
+    
+    p.pca.after = ggplot(res.pca.cell,aes(x = PC1, y = PC2, color = project, label = full_name)) + 
+      geom_point() + 
+      ggtitle(paste0("PCA of 2 batch | after Combat | ",dtname)) +
+      ggrepel::geom_text_repel(aes(label = abbv_name)
+                               ,box.padding   = 0.1
+                               ,point.padding = 0.2
+                               ,seed = set.seed(1234)
+                               ,segment.size = 1
+                               ,size = 5
+      ) + geom_path(aes(group = abbv_name)) +
+      xlab(paste0("PC1 (",round(((res.pca$sdev)^2/sum((res.pca$sdev)^2))[1]*100,2)," %)")) +
+      ylab(paste0("PC1 (",round(((res.pca$sdev)^2/sum((res.pca$sdev)^2))[2]*100,2)," %)"))
+    #tsne
+    set.seed(42)
+    dat_tsne = Rtsne::Rtsne(t(dat)
+                            , dims = 2
+                            , perplexity=10
+                            , verbose=FALSE
+                            , max_iter = 5000
+                            , pca_center = TRUE
+                            , pca_scale = TRUE
+                            
+                            ##,theta = 0
+    )
+    xy_tsne = dat_tsne$Y
+    rownames(xy_tsne) = colnames(dat)
+    xy_tsne = as.data.frame(xy_tsne)
+    
+    res.pca.cell = cbind(rownames(xy_tsne),xy_tsne)
+    colnames(res.pca.cell) = c("colname","tsne1","tsne2")
+    res.pca.cell = as_tibble(res.pca.cell) %>% mutate(colname = as.character(colname))
+    
+    res.pca.cell = left_join(res.pca.cell,metadata_master) %>% mutate(project = ifelse(project == "SO_6831","batch1","batch2"))
+    
+    p.tsne.after = ggplot(res.pca.cell,aes(x = tsne1, y = tsne2
+                                , color = project
+                                , label = abbv_name)) + 
+      geom_point() +
+      ggtitle(paste0("tsne of 2 batch | after Combat | ",dtname)) +
+      ggrepel::geom_text_repel(aes(label = abbv_name)
+                               ,box.padding   = 0.1
+                               ,point.padding = 0.2
+                               ,seed = set.seed(1234)
+                               ,segment.size = 1
+                               ,size = 5
+      ) + 
+      geom_path(aes(group = abbv_name))
+    
+  ##################### 
+    
+  ##################### 
+  ########figure#######
+  #####################  
+    
+  q = ggarrange(p.pca.prior + ggtitle("")
+            ,p.pca.after + ggtitle("")
+            ,p.tsne.prior + ggtitle("")
+            ,p.tsne.after + ggtitle("")
+            ,ncol = 2,nrow = 2
+            , labels = c("A", "B", "C","D"))
+  
+  ggsave(filename =  paste0(fl.output.supl_fig,"/Supplementary Figure Supl.fig before_after_combat_",Sys.Date(),".pdf")
+         ,plot = q
+         ,device = "pdf"
+         ,width = 12
+         ,height = 12)
+  #####################
+  
+   write_csv(repl_fl_combat_ccadr_tpm
+            ,paste0(fl.output,'/repl_fl_combat_ccadr_log2tpm_PB_',Sys.Date(),'.csv'))
+```
+
