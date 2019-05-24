@@ -599,7 +599,7 @@ output: html_notebook
     p.pca.after = ggplot(res.pca.cell,aes(x = PC1, y = PC2, color = project, label = full_name)) + 
       geom_point() + 
       ggtitle(paste0("PCA of 2 batch | after Combat | ",dtname)) +
-      ggrepel::geom_text_repel(aes(label = abbv_name)
+      ggrepel::geom_text_repel(aes(label = full_name)
                                ,box.padding   = 0.1
                                ,point.padding = 0.2
                                ,seed = set.seed(1234)
@@ -635,7 +635,7 @@ output: html_notebook
                                 , label = abbv_name)) + 
       geom_point() +
       ggtitle(paste0("tsne of 2 batch | after Combat | ",dtname)) +
-      ggrepel::geom_text_repel(aes(label = abbv_name)
+      ggrepel::geom_text_repel(aes(label = full_name)
                                ,box.padding   = 0.1
                                ,point.padding = 0.2
                                ,seed = set.seed(1234)
