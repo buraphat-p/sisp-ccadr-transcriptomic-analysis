@@ -1,0 +1,684 @@
+---
+title: "2_ccle"
+output: html_notebook
+---
+
+###set workspace and library###
+```{r Introduction, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+######################/2_ccle#####################
+##################################################
+
+  graphics.off()
+  rm(list=ls())
+  glob_wd = "D:/Github"
+  setwd(glob_wd)
+  set.seed(1234)
+  
+  collection_name = "Our cell line panel"
+  
+  path = "/2_ccle"
+  wd = "/sisp-ccadr-transcriptomic-analysis"
+  my_wd = paste(glob_wd,wd,path,sep = "")
+  fl.output = paste(my_wd,"/output",sep = "")
+  fl.input =  paste(my_wd,"/input",sep = "")
+  set.seed(1234)
+  
+################################################## 
+######################library##################### 
+##################################################  
+  
+  library("openxlsx")
+  library("dplyr")
+  library("tidyverse")
+  library("tidyr")
+  library("psych")
+  library("caret")
+  library("readr")
+  library("ggpubr")
+  library("ggrepel")
+  library("Rtsne")
+  library("biomaRt")
+  library("org.Hs.eg.db")
+  library("sva")
+  library("pamr")
+  library("ROCR")
+  library("caret")
+  library("randomForest")
+  library("e1071")
+  
+##################################################  
+```
+
+###load metadata###
+```{r Meta_data, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################  
+####################meta_data##################### 
+##################################################  
+  
+  metadata_master = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_master"
+                                                         ,".xlsx")))
+  metadata_cellline = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_cellline"
+                                                         ,".xlsx")))
+  
+  metadata_basepair = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_basepair"
+                                                           ,".xlsx")))
+  metadata_master = metadata_master %>% filter(validation, ccadr_project)
+```
+
+###load ccle data and combination###
+```{r load ccle data, message=FALSE, warning=FALSE, paged.print=FALSE}
+#metadata
+  meta_organ = read_csv(paste0(fl.input
+                               ,"/EMBL_EBI_organ.csv"))
+  
+  meta_organ_t = meta_organ %>% 
+    mutate(full_name = paste0(`Factor Value[cell line]`
+                              ,", "
+                              ,`Factor Value[disease]`)) %>% 
+    dplyr::select(full_name,organ,X1) %>% 
+    mutate(database = "CCLE"
+           ,abbv_name = X1) %>% 
+    dplyr::select(-X1) %>% 
+    dplyr::select(full_name,organ,database,abbv_name) %>%
+    rbind(.
+          ,metadata_master %>% 
+            dplyr::filter(validation,ccadr_project) %>%
+            filter(project %in% "SO_6831") %>%
+            filter(treatment %in% c("no","none")) %>% 
+            dplyr::select(cell_treatment
+                          ,cellline
+                          ,abbv_name) %>% 
+            distinct() %>%
+            mutate(full_name = cell_treatment) %>%
+            dplyr::select(full_name
+                          ,cellline
+                          ,abbv_name) %>%
+            left_join(.
+                      ,metadata_cellline) %>%
+            mutate(database = collection_name) %>%
+            dplyr::select(full_name,organ,database,abbv_name) 
+          
+    )
+  
+  #sisp collection
+  dat_tpm = read_csv(paste0(glob_wd,wd,"/1_cca/output/median_log2tpm_combat_PB_.csv"))
+
+  
+  sisp_basal_dat = dat_tpm 
+  rm(dat_tpm)
+  sisp_basal_dat
+  dim(sisp_basal_dat) 
+  
+  #ccle
+  
+  dat_ccle <- read_tsv(paste0(fl.input
+                              ,"/E-MTAB-2770-query-results.tpms.tsv")
+                       ,skip = 4) #934 cell lines
+  
+  dat_ccle_t = dat_ccle %>% 
+                gather(key = celline, value = exp
+                       ,-`Gene ID`,-`Gene Name`) %>% 
+                mutate(Symbol = `Gene Name`) %>%
+                dplyr::select(`Gene ID`,Symbol,celline,exp) %>%
+                replace_na(list(exp = 0)) %>% 
+                mutate(l_exp = log2(exp+1)) %>% 
+                dplyr::select(-exp) %>% 
+                group_by(`Gene ID`) %>% 
+                mutate(med_l_exp = median(l_exp)) %>%
+                filter(med_l_exp > 0) %>% #26,872 gene Symbol
+                mutate(ensemble = `Gene ID`) %>%
+                group_by() %>%
+                dplyr::select(-`Gene ID`,-med_l_exp)  %>% dplyr::select(ensemble
+                                                          ,Symbol
+                                                          ,celline
+                                                          ,l_exp) %>% 
+                group_by(Symbol,ensemble) %>%
+                spread(key = celline
+                       , value = l_exp)
+
+  ##combine ccle to sisp
+  #convert sisp to ensemble #hg19
+  ensembl = useMart("ensembl"
+                    ,dataset="hsapiens_gene_ensembl"
+                    ,host = "uswest.ensembl.org"
+                    )
+  bm = getBM(attributes= c('ensembl_gene_id'
+                           ,'hgnc_symbol'
+                           )
+        ,filters = 'hgnc_symbol'
+        ,values = sisp_basal_dat$Symbol
+        ,mart = ensembl
+        )
+  
+  sisp_basal_dat_t = as.tibble(bm) %>% 
+                      mutate(Symbol = hgnc_symbol
+                             , ensemble = ensembl_gene_id) %>% 
+                      dplyr::select(Symbol,ensemble) %>% inner_join(.
+                                                                    ,sisp_basal_dat %>% 
+                                                                      group_by(Symbol)) %>% #13,543
+                      group_by(Symbol,ensemble) %>%
+                      gather(key = celline
+                             ,value = l_exp
+                             ,-Symbol
+                             ,-ensemble) %>%
+                      spread(key = celline
+                             ,value = l_exp) 
+  #combat
+  combine_dat = inner_join(dat_ccle_t,sisp_basal_dat_t)
+
+  pre_combat = combine_dat %>% 
+                group_by() %>% 
+                dplyr::select(-ensemble,-Symbol) %>% as.matrix()
+  rownames(pre_combat) = combine_dat$ensemble
+  
+  cl_meta = meta_organ_t %>% 
+                      dplyr::select(full_name
+                                    ,database) %>% 
+                      as.data.frame()
+  rownames(cl_meta) = cl_meta$full_name
+  cl_meta = cl_meta[colnames(pre_combat)
+                    ,]
+  
+  cl_meta$database = as.factor(cl_meta$database)
+  
+  modcombat = model.matrix(~database, data=cl_meta)
+  edata = as.matrix(pre_combat)
+  
+  combat_edata = ComBat(dat=edata
+                        , batch=cl_meta$database
+                        #, mod=modcombat
+                        , par.prior=TRUE  
+                        , prior.plots=FALSE )
+  
+  combine_dat_after_combat = as.tibble(cbind(combine_dat %>% 
+                                               group_by() %>% 
+                                               dplyr::select(ensemble,Symbol)
+                                             ,combat_edata))
+  
+  #normalization
+ 
+  df_combine_dat = combine_dat_after_combat %>% 
+                    gather(key = full_name
+                           , value = exp
+                           , -ensemble, -Symbol) %>% 
+                    group_by(full_name) %>% 
+                    left_join(.
+                              ,meta_organ_t %>% 
+                                dplyr::select(full_name, database) ) %>% 
+                                group_by(database, ensemble) %>% 
+                                mutate(norm_exp = scale(exp)) %>% 
+                                group_by() %>% 
+                                dplyr::select(ensemble,full_name,norm_exp) %>%
+                                spread(key = full_name
+                                       , value = norm_exp)
+  df_combine_dat = as.data.frame(df_combine_dat)
+  rownames(df_combine_dat) = df_combine_dat$ensemble
+  df_combine_dat = df_combine_dat[,-1]
+```
+
+###knn for classification as liver/pancrease like####
+```{r}
+##################################################
+######################knn######################### 
+################################################## 
+
+  ####ga/knn for liver vs pancrease
+    #GA: A Package for Genetic Algorithms in R
+    #DOI:	10.18637/jss.v053.i04
+  
+    nt = 5
+    set.seed(42)
+    ctrl <- gafsControl(functions = rfGA,
+                        method = "cv",
+                        number = 10
+                        ,verbose = TRUE)
+  
+    liver_name = meta_organ_t %>% filter(organ %in% c("liver")) %>% pull(full_name)
+    pancreas_name = meta_organ_t %>% filter(organ %in% c("pancreas")) %>% pull(full_name)
+    
+    set.seed(42)
+    train_liver_name =  liver_name[sample(1:length(liver_name),0.70*length(liver_name),replace = FALSE)]
+    test_liver_name = setdiff(liver_name,train_liver_name)
+      
+    set.seed(42)
+    train_pancreas_name = pancreas_name[sample(1:length(pancreas_name),0.70*length(pancreas_name),replace = FALSE)]
+    test_pancreas_name = setdiff(pancreas_name,train_pancreas_name)
+    
+    set.seed(1234)
+    rf_search <- gafs(x = t(df_combine_dat[,c(train_liver_name,train_pancreas_name)])
+                      ,y = as.factor(c(rep("liver"
+                                           ,length(train_liver_name))
+                                       ,rep("pancreas"
+                                            ,length(train_pancreas_name))))
+                      ,iters = nt
+                      ,gafsControl = ctrl
+                      )
+    geneset = rf_search$optVariables
+    
+    #knn
+    set.seed(42)
+    trControl = trainControl(method = "repeatedcv"
+                             ,number = nt
+                             ,repeats = 3
+                             ,classProbs = TRUE
+                             ,summaryFunction = twoClassSummary)
+    
+    train = as.data.frame(t(df_combine_dat[geneset
+                                          ,c(train_liver_name
+                                             ,train_pancreas_name)]))
+    train$class = as.factor(c(rep("liver"
+                                  ,length(train_liver_name))
+                              ,rep("pancreas"
+                                   ,length(train_pancreas_name))))
+    
+    set.seed(42)
+    model1 <- train(class~. 
+                    , data = train
+                    , method = "knn"
+                    , preProcess = "center"
+                    ,trControl = trControl
+                    ,metric = "ROC"
+                    ,tuneLength = nt)
+    model1
+    #validation
+    validation = as.data.frame(t(df_combine_dat[geneset
+                                                ,c(test_liver_name
+                                                   ,test_pancreas_name)]))
+    validation$class = as.factor(c(rep("liver"
+                                       ,length(test_liver_name))
+                                   ,rep("pancreas"
+                                        ,length(test_pancreas_name))))
+    valid_pred <- predict(model1
+                          ,validation
+                          , type = "prob")
+    
+    #Storing Model Performance Scores
+    pred_val <-prediction(valid_pred[,2]
+                          ,validation$class)
+    
+    # Calculating Area under Curve (AUC)
+    perf_val <- performance(pred_val
+                            ,"auc")
+    perf_val
+    
+    # Plot AUC
+    perf_val <- performance(pred_val
+                            , "tpr", "fpr")
+    plot(perf_val
+         , col = "green", lwd = 1.5)
+    
+    #Calculating KS statistics
+    ks <- max(attr(perf_val
+                   , "y.values")[[1]] - (attr(perf_val, "x.values")[[1]]))
+    ks
+    
+    #test for cca
+    test.cca = as.data.frame(t(df_combine_dat[geneset
+                                              ,(meta_organ_t %>% 
+                                                  filter(organ %in% "cholang"
+                                                         ,database %in% collection_name
+                                                         ) %>% 
+                                                  pull(full_name))]))
+    cca.predict = predict(model1
+                          ,test.cca
+                          , type = "prob")
+    
+    result.cca = data.frame(full_name = as.character(rownames(test.cca))
+                            ,organ =     as.tbl(cca.predict) %>% 
+                                            mutate(result = ifelse((liver - pancreas) > 0
+                                                                   ,"liver-like"
+                                                                   ,"pancreas-like")) %>% 
+                                            pull(result) %>% as.character()
+                            ,liver_score = cca.predict$liver
+                            ,pancreas_score = cca.predict$pancreas
+                            ,stringsAsFactors = FALSE
+                            )
+
+   result.cca =  as.tibble(result.cca) %>% 
+                                       left_join(.
+                                                 ,meta_organ_t %>% 
+                                                   filter(full_name %in% result.cca$full_name) %>% 
+                                                   dplyr::select(-organ)
+                                       )
+      
+    meta_organ_t_final =  meta_organ_t %>% 
+                            filter(full_name %in% as.character(setdiff(meta_organ_t$full_name
+                                                                       ,result.cca$full_name))
+                                   ) %>%
+                            rbind(.
+                                  ,result.cca %>% dplyr::select(colnames(meta_organ_t)))
+      
+  write.csv(result.cca
+            ,paste0(fl.output,"/result.cca",Sys.Date(),".csv"))
+##################################################  
+```
+
+```{r tsne + result of prediction of CCA, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################
+######################tsne########################  
+##################################################   
+  
+  #tsne plot
+  library(Rtsne)
+  set.seed(1234)
+  dat_tsne = Rtsne::Rtsne(t(df_combine_dat)
+                          , dims = 2
+                          , perplexity=10
+                          , verbose=FALSE
+                          , max_iter = 5000
+                          , pca_center = TRUE
+                          , pca_scale = FALSE
+                          
+                          ##,theta = 0
+  )
+  dat_tsne_xy = as.tibble(dat_tsne$Y) %>% 
+                  mutate(x = V1, y = V2) %>% 
+                  dplyr::select(x,y) %>% 
+                  mutate(full_name = colnames(df_combine_dat) )
+
+ 
+  #tsne plot
+  dum = inner_join(dat_tsne_xy,meta_organ_t_final) %>% 
+          mutate(tsne1 = x, tsne2 = y) %>% 
+          dplyr::select(-x,-y)
+  write.csv(dum,paste0(fl.output,"/tsne_coordination_cca_ccle_",Sys.Date(),".csv"))
+  p = inner_join(dat_tsne_xy,meta_organ_t_final) %>% 
+        filter(organ %in% 
+                 c("liver-like"
+                   ,"pancreas-like"
+                   ,"liver"
+                   ,"pancreas"
+                   )) %>%
+        ggplot(.
+               ,aes(x = x
+                    , y = y
+                    , color = organ
+                    , label = abbv_name)) +
+        geom_point(aes(shape = database
+                       , size = 4
+                       , fill = organ
+                       , alpha = 0.5
+                       )) +
+        geom_text_repel(data = . %>% filter(organ %in% 
+                                                     c("liver-like"
+                                                       ,"pancreas-like"))
+                        ,aes(x = x
+                             , y = y
+                             , color = organ
+                             , label = abbv_name)
+                        ) + 
+        scale_shape_manual(breaks = c(collection_name,"CCLE")
+                           ,values = c(21,24))+
+        scale_color_manual(values = c("#50c878"
+                                       ,"#50c878"
+                                       ,"#842DCE"
+                                       ,"#842DCE"
+                                       ))  +
+        scale_fill_manual(breaks = c("liver-like"
+                                     ,"liver"
+                                     ,"pancreas-like"
+                                     ,"pancreas")
+                          ,values = c("white"
+                                    ,"#edf9f1"
+                                    ,"white"
+                                    ,"#f2eafa"
+                                    )) + 
+        ggtitle("t-SNE of normalized RNA-seq data") + theme_test() +
+        xlab("t-SNE 1") +
+        ylab("t-SNE 2")
+  
+  p
+  
+  png(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".png")
+      ,width = 500
+      ,height = 500)
+  p
+  dev.off()
+
+  pdf(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".pdf"))
+  p
+  dev.off()
+  
+  #edited tsne plot
+  dum = inner_join(dat_tsne_xy,meta_organ_t_final) %>% 
+          filter(organ %in% 
+                   c("liver-like"
+                     ,"pancreas-like"
+                     ,"liver"
+                     ,"pancreas"
+                   ))
+  dum = dum %>% 
+         dplyr::filter(database %in% "CCLE") %>%
+         bind_rows(.
+                    ,dum %>% 
+                      dplyr::filter(database %in% collection_name) %>% 
+                      mutate(abbv_name = unlist(strsplit(full_name
+                                                         ,split = "_none"))))
+  p = dum %>%
+        ggplot(.
+               ,aes(x = x
+                    , y = y
+                    , color = organ
+                    , label = abbv_name)) +
+        geom_point(aes(shape = database
+                       , size = 4
+                       , fill = organ
+                       , alpha = 0.5
+        )) +
+        geom_text_repel(data = . %>% filter(organ %in% 
+                                              c("liver-like"
+                                                ,"pancreas-like"))
+                        ,aes(x = x
+                             , y = y
+                             , color = organ
+                             , label = abbv_name)
+        ) + 
+        scale_shape_manual(breaks = c(collection_name,"CCLE")
+                           ,values = c(21,24))+
+        scale_color_manual(values = c("#50c878"
+                                      ,"#50c878"
+                                      ,"#842DCE"
+                                      ,"#842DCE"
+        ))  +
+        scale_fill_manual(breaks = c("liver-like"
+                                     ,"liver"
+                                     ,"pancreas-like"
+                                     ,"pancreas")
+                          ,values = c("white"
+                                      ,"#388c54"
+                                      ,"white"
+                                      ,"#5c1f90"
+                          )) + 
+        ggtitle("t-SNE of normalized RNA-seq data") + theme_test() +
+        xlab("t-SNE 1") +
+        ylab("t-SNE 2")
+  
+  png(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".png")
+      ,width = 500
+      ,height = 500)
+  p
+  dev.off()
+  
+  pdf(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".pdf"))
+  p
+  dev.off()
+  
+    #replace -
+    dum = inner_join(dat_tsne_xy,meta_organ_t_final) %>% 
+      filter(organ %in% 
+               c("liver-like"
+                 ,"pancreas-like"
+                 ,"liver"
+                 ,"pancreas"
+               ))
+    dum = dum %>% 
+      dplyr::filter(database %in% "CCLE") %>%
+      bind_rows(.
+                ,dum %>% 
+                  dplyr::filter(database %in% collection_name) %>% 
+                  mutate(abbv_name = unlist(strsplit(full_name
+                                                     ,split = "_none")))  %>% 
+                  mutate(abbv_name = gsub("[-]","-",abbv_name))
+                
+                )
+      p = dum %>%
+        ggplot(.
+               ,aes(x = x
+                    , y = y
+                    , color = organ
+                    , label = abbv_name)) +
+        geom_point(aes(shape = database
+                       , size = 4
+                       , fill = organ
+                       , alpha = 0.5
+        )) +
+        geom_text_repel(data = . %>% filter(organ %in% 
+                                              c("liver-like"
+                                                ,"pancreas-like"))
+                        ,aes(x = x
+                             , y = y
+                             , color = organ
+                             , label = abbv_name)
+        ) + 
+        scale_shape_manual(breaks = c(collection_name,"CCLE")
+                           ,values = c(21,24))+
+        scale_color_manual(values = c("#50c878"
+                                      ,"#50c878"
+                                      ,"#842DCE"
+                                      ,"#842DCE"
+        ))  +
+        scale_fill_manual(breaks = c("liver-like"
+                                     ,"liver"
+                                     ,"pancreas-like"
+                                     ,"pancreas")
+                          ,values = c("white"
+                                      ,"#388c54"
+                                      ,"white"
+                                      ,"#5c1f90"
+                          )) + 
+        ggtitle("t-SNE of normalized RNA-seq data") + theme_test() +
+        xlab("t-SNE 1") +
+        ylab("t-SNE 2")
+      
+      png(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".png")
+          ,width = 500
+          ,height = 500)
+      p
+      dev.off()
+      
+      pdf(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".pdf"))
+      p
+      dev.off()
+      
+      pdf(file = paste0(fl.output,"/tsne_ccle_",Sys.Date(),".pdf"))
+      p
+      dev.off()
+##################################################  
+  
+  
+  write.csv(result.cca
+            ,paste0(fl.output
+                    ,"/cca.predict",Sys.Date(),".csv"))
+```
+
+
+```{r correlation score, message=FALSE, warning=FALSE, paged.print=FALSE}
+################################################## 
+##################correlation######################## 
+##################################################  
+  ##correlation matrix
+  dum = as.matrix(combine_dat_after_combat %>%
+                    dplyr::select(-ensemble, -Symbol))
+  cor_mat = cor(dum
+                  ,method = "spearman")
+
+  meta_organ_t_final %>% 
+    filter(organ %in% "brca") %>% 
+    mutate(abbv_name = str_replace_all(abbv_name,c("-"),"")) %>% 
+    group_by(abbv_name) %>% summarise(lf = list(full_name), cor = cor_mat[unlist(lf)[1],unlist(lf)[2]])
+  
+  flattenCorrMatrix <- function(cormat) {
+    ut <- upper.tri(cormat)
+    data.frame(
+      row = rownames(cormat)[row(cormat)[ut]],
+      column = rownames(cormat)[col(cormat)[ut]],
+      cor  =(cormat)[ut]
+    )
+  }
+  
+  cor_mat_flt = flattenCorrMatrix(cor_mat)
+
+  as.tibble(cor_mat_flt) %>% 
+    summarise(median_cor = median(abs(cor))
+              , min_cor = min(cor)
+              , max_cor = max(cor)
+  )
+
+
+  c1 = cor_mat_flt[intersect(which(cor_mat_flt$row == "MCF7, invasive ductal carcinoma")
+                        ,which(cor_mat_flt$column == "MCF-7_none"))
+              ,"cor"] %>% round(.,3)
+  c2 = cor_mat_flt[intersect(which(cor_mat_flt$row == "T-47D, invasive ductal carcinoma")
+                        ,which(cor_mat_flt$column == "T-47D_none"))
+              ,"cor"] %>% round(.,3)
+  c3= cor_mat_flt[intersect(which(cor_mat_flt$row == "ZR-75-1, invasive ductal carcinoma")
+                        ,which(cor_mat_flt$column == "ZR-75-1_none"))
+              ,"cor"] %>% round(.,3)
+  
+  
+  wilcox.test(as.tibble(cor_mat_flt) %>% pull(cor),c(c1,c2,c3))
+  
+  #####
+  ##only brca + breast
+  dum = as.matrix(combine_dat_after_combat %>% 
+                    gather(value = exp
+                           , key = full_name
+                           , -ensemble, -Symbol) %>% 
+                    group_by(full_name) %>% 
+                    left_join(.
+                              ,meta_organ_t_final %>% 
+                                dplyr::filter(organ %in% c("breast"
+                                                           ,"brca"))) %>% 
+                                na.omit()  %>% 
+                                dplyr::select(ensemble,full_name,exp) %>% 
+                                spread(key = full_name, value = exp) %>%
+                    dplyr::select(-ensemble))
+  cor_mat = cor(dum
+                ,method = "spearman")
+  
+  meta_organ_t_final %>% 
+    filter(organ %in% "brca") %>% 
+    mutate(abbv_name = str_replace_all(abbv_name,c("-"),"")) %>% 
+    group_by(abbv_name) %>% summarise(lf = list(full_name), cor = cor_mat[unlist(lf)[1],unlist(lf)[2]])
+  
+  flattenCorrMatrix <- function(cormat) {
+    ut <- upper.tri(cormat)
+    data.frame(
+      row = rownames(cormat)[row(cormat)[ut]],
+      column = rownames(cormat)[col(cormat)[ut]],
+      cor  =(cormat)[ut]
+    )
+  }
+  
+  cor_mat_flt = flattenCorrMatrix(cor_mat)
+  
+  as.tibble(cor_mat_flt) %>% 
+    summarise(median_cor = median(abs(cor))
+              , min_cor = min(cor)
+              , max_cor = max(cor)
+    )
+  
+  
+  wilcox.test(as.tibble(cor_mat_flt) %>% pull(cor)
+              ,c(c1,c2,c3))
+  
+##################################################  
+```
+
