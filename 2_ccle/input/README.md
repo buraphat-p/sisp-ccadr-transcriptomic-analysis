@@ -12,7 +12,7 @@ Cellosaurus OCI-Ly3 (CVCL_8800) <br/>
 "Problematic cell line: Misidentified. This cell line was mistakenly distributed by OCI to a number of groups as being OCI-Ly-3 (CVCL_8800). The real identity of this cell line is not known. From personal communication of Neve R." <br/> 
 
 This folder consist of: <br/> 
- "EMBL_EBI_organ.tsv": serve as metadata for cell line cancer origin (by organ) <br/>
- "E-MTAB-2770-query-results.tpms.tsv": serve as raw TPM of CCLE <br/>
- "/_metadata": folder for metada
+- "EMBL_EBI_organ.tsv": serve as metadata for cell line cancer origin (by organ) <br/>
+- "E-MTAB-2770-query-results.tpms.tsv": serve as raw TPM of CCLE <br/>
+- "/_metadata": folder for metada
   
