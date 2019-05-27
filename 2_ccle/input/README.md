@@ -14,5 +14,5 @@ Cellosaurus OCI-Ly3 (CVCL_8800) <br/>
 This folder consist of: <br/> 
 - "EMBL_EBI_organ.tsv": serve as metadata for cell line cancer origin (by organ) <br/>
 - "E-MTAB-2770-query-results.tpms.tsv": serve as raw TPM of CCLE <br/>
-- "/_metadata": folder for metada
+- "/_metadata": folder for metadata
   
