@@ -11,13 +11,13 @@ output: html_notebook
 
   graphics.off()
   rm(list=ls())
-  glob_wd = "D:/Github"
+  glob_wd = "D:/Google Drive/CCA-DR project/Github"
   setwd(glob_wd)
   set.seed(1234)
   
   collection_name = "Our cell line panel"
   
-  path = "/2_ccle"
+  path = "/2_ccle_cca"
   wd = "/sisp-ccadr-transcriptomic-analysis"
   my_wd = paste(glob_wd,wd,path,sep = "")
   fl.output = paste(my_wd,"/output",sep = "")
