@@ -1,4 +1,4 @@
-# /2_tsne
+# /3_heatmap_by_ccle_organ
 # Introduction
 This objective of this module was to compare our CCA (15 cell lines) vs CCLE by origin of cell lines (organ) by using correlation plot, then normalization with z-score.
 
