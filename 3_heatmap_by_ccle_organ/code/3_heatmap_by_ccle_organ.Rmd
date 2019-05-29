@@ -1,0 +1,254 @@
+---
+title: "3_heatmap_by_ccle_organ"
+output: html_notebook
+---
+
+###set workspace and library###
+```{r Introduction, message=FALSE, warning=FALSE, paged.print=FALSE}
+
+######################/2_ccle#####################
+##################################################
+
+  graphics.off()
+  rm(list=ls())
+  glob_wd = "D:/Google Drive/CCA-DR project/Github"
+  setwd(glob_wd)
+  set.seed(1234)
+  
+  collection_name = "Our cell line panel"
+  
+  path = "/3_heatmap_by_ccle_organ"
+  wd = "/sisp-ccadr-transcriptomic-analysis"
+  my_wd = paste(glob_wd,wd,path,sep = "")
+  fl.output = paste(my_wd,"/output",sep = "")
+  fl.input =  paste(my_wd,"/input",sep = "")
+  set.seed(1234)
+  
+################################################## 
+######################library##################### 
+##################################################  
+  
+  library("openxlsx")
+  library("dplyr")
+  library("tidyverse")
+  library("tidyr")
+  library("psych")
+  library("caret")
+  library("readr")
+  library("ggpubr")
+  library("ggrepel")
+  library("Rtsne")
+  library("biomaRt")
+  library("org.Hs.eg.db")
+  library("sva")
+  library("pamr")
+  library("ROCR")
+  library("caret")
+  library("randomForest")
+  library("e1071")
+  library("Hmisc")
+  
+##################################################  
+```
+
+###load metadata###
+```{r Meta_data, message=FALSE, warning=FALSE, paged.print=FALSE}
+##################################################  
+####################meta_data##################### 
+##################################################  
+  
+  metadata_master = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_master"
+                                                         ,".xlsx")))
+  metadata_cellline = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_cellline"
+                                                         ,".xlsx")))
+  
+  metadata_basepair = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_basepair"
+                                                           ,".xlsx")))
+  metadata_master = metadata_master %>% filter(validation, ccadr_project)
+```
+
+###load ccle+cca expression (after norm.)
+```{r}
+  dat = read_csv(paste0(glob_wd
+                        ,wd
+                        ,"/2_tsne/output"
+                        ,"/ccle_cca_expression_table_2019-05-29.csv")
+                 )  %>% 
+          dplyr::select(-X1)
+```
+
+###organ annotation
+```{r}
+# metadat_ccle = read_csv(paste0(fl.input
+#                                ,"/EMBL_EBI_organ.csv")) %>% 
+#                 dplyr::select(-X1)
+# metadat_ccle_disease = read_delim(paste0(fl.input
+#                                        ,"/cgHub_CCLE_RNA-seq_metadata_summary.txt")
+#                                   ,delim = "\t") 
+# 
+# disease_name = metadat_ccle_disease %>% dplyr::select(disease,disease_name) %>% distinct()
+# write.csv(disease_name,paste0(fl.output,"/disease_name.csv"))
+# 
+# dum = metadat_ccle_disease %>% pull(barcode)
+# dum_name = lapply(dum,function(y)((lapply(y,FUN = function(x)(strsplit(x,split = c("CCLE-|-RNA-08"))))[1] %>% unlist())[2])) %>% unlist()
+# 
+# dum_metadat = left_join(metadat_ccle
+#                 ,metadat_ccle_disease %>% 
+#                   cbind(.
+#                         ,tibble(`Sample Characteristic[cell line]` = dum_name)) %>% 
+#                   as.tibble() %>% 
+#                   dplyr::select(barcode,`Sample Characteristic[cell line]`,disease,disease_name))
+# 
+# 
+#   combine_metadat = dum_metadat
+#   write.csv(combine_metadat,paste0(fl.output,"/combine_metadat.csv"))
+
+  #load combine_metadat after filling missing data
+  combine_metadat_edited = read_csv(paste0(fl.input
+                                            ,"/combine_metadat_edited.csv")) %>%
+                            dplyr::select(-X1)
+  combine_organ = rbind(dat %>% 
+                          dplyr::filter(organ %in% c("other","breast","brca")) %>%
+                          dplyr::select(-organ)  %>%
+                          dplyr::select(full_name, abbv_name) %>% 
+                          left_join(.
+                                    ,combine_metadat_edited %>% 
+                                      mutate(abbv_name = `Sample Characteristic[cell line]`) %>%
+                                      dplyr::select(abbv_name, disease, disease_name)) %>%
+                          mutate(organ = disease_name) %>%
+                          dplyr::select(full_name, abbv_name,organ)
+                    ,dat  %>%
+                      dplyr::filter(organ %in%  "cholang") %>% 
+                      dplyr::select(-organ) %>% 
+                      dplyr::select(full_name, abbv_name) %>% 
+                      mutate(disease = "cca",disease_name = "cholangiocarcinoma") %>%
+                      mutate(organ = disease_name) %>%
+                      dplyr::select(full_name, abbv_name,organ)
+                    , dat %>% 
+                        dplyr::filter(organ %in% c("immortal_biliary"
+                                               ,"gallbladder"
+                                               ,"liver"
+                                               ,"pancreas")) %>%
+                        dplyr::select(full_name, abbv_name,organ) %>% 
+                        mutate(disease = organ,disease_name = organ) %>%
+                        mutate(organ = disease_name) %>%
+                        dplyr::select(full_name, abbv_name,organ)
+                  )
+
+  dat_edited_organ = dat %>% 
+                      dplyr::select(-organ) %>% 
+                      left_join(.
+                                ,combine_organ %>% 
+                                  dplyr::select(-abbv_name))
+
+  dat_our_cca = dat_edited_organ %>% 
+                  dplyr::filter(database %in% "Our cell line panel"
+                                ,organ %in% "cholangiocarcinoma") %>% 
+                  mutate(organ = "Cholangiocarcinoma")
+  dat_ccle_by_organ = dat_edited_organ %>%
+                        dplyr::filter(database %in% "CCLE") %>% 
+                        gather(key = gene
+                               ,value = exp
+                               , -full_name,-database,-organ,-abbv_name) %>% 
+                        group_by(organ,gene) %>% 
+                        mutate(median_exp = median(exp)) %>% 
+                        dplyr::select(organ,gene,median_exp) %>% 
+                        distinct() %>% 
+                        group_by() %>% 
+                        spread(key = gene
+                               , value = median_exp) %>% 
+                        mutate_if(.
+                                  , is.character
+                                  , stringr::str_replace_all
+                                  , pattern = "liver"
+                                  , replacement ="Liver cancer") %>% 
+                         mutate_if(.
+                                  , is.character
+                                  , stringr::str_replace_all
+                                  , pattern = "pancreas"
+                                  , replacement ="Pancreas cancer") %>% 
+                         mutate_if(.
+                                  , is.character
+                                  , stringr::str_replace_all
+                                  , pattern = "gallbladder"
+                                  , replacement ="Gallbladder cancer")
+  
+  df = rbind(dat_our_cca   %>%
+               dplyr::select(-database
+                             ,-abbv_name
+                             ,-organ)
+            ,dat_ccle_by_organ %>% 
+              mutate(full_name = organ) %>% 
+              dplyr::select(-organ))
+  df_mat = df %>% dplyr::select(-full_name) %>% as.data.frame()
+  rownames(df_mat) = df$full_name
+  
+  flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )}
+  
+    res <- rcorr(as.matrix(t(df_mat))
+                 ,type = "spearman"
+               )
+  cor_mat = res$r[dat_our_cca$full_name
+                  ,dat_ccle_by_organ$organ]
+  
+  p_mat = res$P[dat_our_cca$full_name
+                  ,dat_ccle_by_organ$organ]
+
+  rownames(cor_mat) = data.frame(full_name = as.character(rownames(cor_mat))
+                                 ,stringsAsFactors = FALSE) %>% 
+                        as.tibble %>% 
+                        left_join(.
+                                  ,metadata_master %>% 
+                                    dplyr::select(full_name = cell_treatment
+                                                  , cellline) %>% 
+                                    distinct()) %>% arrange(full_name
+                                                            ,rownames(cor_mat)) %>% 
+                        pull(cellline)
+  #pheatmap
+  p = pheatmap::pheatmap(as.data.frame(scale(t((cor_mat)[])))
+                     ,scale = "none"
+                     ,main = "Cor.  CCA vs CCLE (by cancer type)\n: shown as z-score"
+
+                     ,clustering_distance_rows = "correlation"
+                     ,clustering_distance_cols = "correlation"
+                     ,clustering_method = "average"
+                     ,color = c('#b2182b'
+                                ,'#d6604d'
+                                ,'#f4a582'
+                                ,'#fddbc7'
+                                ,'#f7f7f7'
+                                ,'#d1e5f0'
+                                ,'#92c5de'
+                                ,'#4393c3'
+                                ,'#2166ac')
+                     
+                               )
+  
+    png(file = paste0(fl.output,"/cca_ccle_corr_heatmap",Sys.Date(),".png")
+          ,width = 700
+          ,height = 500)
+    p
+    dev.off()
+      
+    pdf(file = paste0(fl.output,"/cca_ccle_corr_heatmap",Sys.Date(),".pdf")
+        ,width = 8
+        ,height = 5
+        )
+    p
+    dev.off()
+  
+```
+
