@@ -2,10 +2,10 @@
 # Introduction
 This objective of this module was to retrieve data of RNA-seq from basepair and removed batch effect. <br/>
 
-#How to run this code
+# How to run this code
 This folder consits of  "/input", "/code", and "/output". Place input as in "/input" folder, then run "/code/1_cca.RMD". Final result will be shown in "/output" folder.
 
-#/input
+# /input
 This folder consist of two subfloder: "/_basepair" and "/_metadata". Folder /_basepair consist of data table of TPM/count of each cell lines. Folder "/_metadata" consist of meta data for this study.
 
 File list consist of:
@@ -60,7 +60,7 @@ Note:<br/>
 SO_6831 is batch1.<br/>
 SO_8069 is batch2.<br/>
 
-#/output
+# /output
 This folder is a result for /1_cca/code/1_cca.rmd script. There are three files here.<br/>
 - Supplementary Figure Supl.fig before_after_combat_.pdf - PCA and tsne before vs after removal of batch effect.<br/>
 - repl_fl_combat_ccadr_log2tpm_PB_.csv - pairewise gene expression of 15 CCA in bacth1 VS bacth2.<br/>
