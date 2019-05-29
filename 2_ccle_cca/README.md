@@ -17,17 +17,13 @@ Cellosaurus OCI-Ly3 (CVCL_8800) <br/>
 "Caution: A cell line, now termed GNE-587170 (CVCL_AT69), was mistakenly distributed by OCI to a number of groups under the designation OCI-Ly-3, the origin of that cell line is now known." <br/> 
 "Problematic cell line: Misidentified. This cell line was mistakenly distributed by OCI to a number of groups as being OCI-Ly-3 (CVCL_8800). The real identity of this cell line is not known. From personal communication of Neve R." <br/> 
 
-This folder consist of: <br/> 
-- "EMBL_EBI_organ.tsv": serve as metadata for cell line cancer origin (by organ) <br/>
-- "E-MTAB-2770-query-results.tpms.tsv": serve as raw TPM of CCLE <br/>
-
 File list consist of:
 - "/_metadata": folder for metadata
 -	_metadata/metadata_basepair.xlsx
 -	_metadata/metadata_cellline.xlsx
 -	_metadata/metadata_master.xlsx
--	E-MTAB-2770-query-results.tpms.tsv
--	EMBL_EBI_organ.csv
+-	E-MTAB-2770-query-results.tpms.tsv : serve as metadata for cell line cancer origin (by organ)
+-	EMBL_EBI_organ.csv: serve as raw TPM of CCLE
 
 # /output
 This folder consist of: <br/> 
