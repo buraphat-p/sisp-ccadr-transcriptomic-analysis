@@ -1,6 +1,6 @@
 # /2_tsne
 # Introduction
-This objective of this module was to re-plot tsne plot base on output from /2_ccle_cca/code/2_ccle_cca.RMD
+This objective of this module was to re-plot tsne plot with the same setting and seed from /2_ccle_cca/code/2_ccle_cca.RMD
 
 # How to run this code
 This folder consits of  "/input", "/code", and "/output". Place input as in "/input" folder, then run "/code/2_ccle_cca.RMD". Final result will be shown in "/output" folder.
