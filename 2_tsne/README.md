@@ -22,8 +22,8 @@ File list consist of:
 -	_metadata/metadata_basepair.xlsx
 -	_metadata/metadata_cellline.xlsx
 -	_metadata/metadata_master.xlsx
--	E-MTAB-2770-query-results.tpms.tsv : serve as metadata for cell line cancer origin (by organ)
--	EMBL_EBI_organ.csv: serve as raw TPM of CCLE
+-	E-MTAB-2770-query-results.tpms.tsv: serve as raw TPM of CCLE 
+-	EMBL_EBI_organ.csv: serve as metadata for cell line cancer origin (by organ)
 
 This module also require 15 cca gene expression and liver-pancreas annotation from folder: <br/>
 /1_cca/output <br/>
