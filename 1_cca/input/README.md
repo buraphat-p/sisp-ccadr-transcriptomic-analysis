@@ -3,8 +3,6 @@
 This folder consist of two subfloder: "/_basepair" and "/_metadata". Folder /_basepair consist of data table of TPM/count of each cell lines. Folder "/_metadata" consist of meta data for this study.
 
 File list consist of:
--	_basepair/desktop.ini
--	_basepair/SO_6831/desktop.ini
 -	_basepair/SO_6831/SO_6831_D068.hg19.counts_gene.txt
 -	_basepair/SO_6831/SO_6831_D131.hg19.counts_gene.txt
 -	_basepair/SO_6831/SO_6831_D138.hg19.counts_gene.txt
