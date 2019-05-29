@@ -10,7 +10,7 @@ output: html_notebook
 ##################################################
   graphics.off()
   rm(list=ls())
-  glob_wd = "D:/Github"
+  glob_wd = "D:/Google Drive/CCA-DR project/Github"
   setwd(glob_wd)
   set.seed(1234)
   
