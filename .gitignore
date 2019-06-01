@@ -45,3 +45,4 @@ rsconnect/
 *.ini
 *.tsv
 *.png
+*.gz
