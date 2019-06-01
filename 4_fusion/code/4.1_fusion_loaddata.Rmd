@@ -1,0 +1,156 @@
+---
+title: "4_fusion_loaddata"
+output: html_notebook
+---
+
+###set workspace and library###
+```{r}
+#########/4_fusion_loaddata########
+##################################################
+
+  graphics.off()
+  rm(list=ls())
+  glob_wd = "D:/Google Drive/CCA-DR project/Github"
+  #glob_wd = "/Users/Pongsakorn/Google Drive/CCA-DR project"
+  setwd(glob_wd)
+  set.seed(1234)
+  
+  path = "/4_fusion"
+  wd = "/sisp-ccadr-transcriptomic-analysis"
+  my_wd = paste(glob_wd,wd,path,sep = "")
+  fl.output = paste(my_wd,"/output",sep = "")
+  fl.input = paste0(my_wd,"/input")
+  set.seed(1234)
+  
+##################################################  
+######################library##################### 
+##################################################  
+
+  library("openxlsx")
+  library("dplyr")
+  library("tidyverse")
+  library("tidyr")
+  library("psych")
+  library("caret")
+  library("readr")
+  library("ggpubr")
+
+##################################################  
+```
+
+###load metadata###
+```{r}
+##################################################  
+####################meta_data##################### 
+##################################################  
+  
+  metadata_master = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_master"
+                                                         ,".xlsx")))
+  metadata_cellline = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_cellline"
+                                                           ,".xlsx")))
+  
+  metadata_basepair = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_basepair"
+                                                           ,".xlsx")))
+  
+################################################## 
+```
+
+
+###load fusion data from basepair
+```{r}
+##################################################  
+####################4_fusion######################
+##################################################  
+  ###load
+  fl.fusion = paste0(fl.input,"/_basepair/fusion_defuse")
+  
+  fl.lt = list.files(paste0(paste0(fl.input
+                                   ,"/_basepair/fusion_defuse/")
+                            ,c("SO_6831"
+                               ,"SO_8069"))
+                     ,pattern = "tsv"
+                     ,full.names = TRUE)
+  fl.lt.short = list.files(paste0(paste0(fl.input
+                                     ,"/_basepair/fusion_defuse/")
+                              ,c("SO_6831"
+                                 ,"SO_8069"))
+                       ,pattern = "tsv"
+                       ,full.names = FALSE)
+  
+  mat.fl.fusion = data.frame(path = fl.lt
+                             ,type = unlist(lapply(strsplit(fl.lt
+                                                            ,split = "[.]")
+                                                   ,FUN = function(x)(x[[3]])))
+                             ,cond_name = unlist(lapply(strsplit(fl.lt.short
+                                                            ,split = "[.]")
+                                                   ,FUN = function(x)(x[[1]])))
+                              )
+  
+  mat.fl.fusion = as_tibble(mat.fl.fusion
+                            ,stringsAsFactors = FALSE) %>% mutate(path = as.character(path)
+                                                                  ,type = as.character(type)
+                                                                  , cond_name = as.character(cond_name)) %>%
+                            left_join(.
+                                          , metadata_master %>% 
+                                            mutate(cond_name = colname) %>%
+                                            filter(validation, ccadr_project) %>% 
+                                            select(cond_name, project, abbv_name, cellline))
+  
+  rm(dum)
+  rm(dum2)
+  dum2 = NA
+  for(i in (mat.fl.fusion %>% filter(type %in% c("tsv")) %>% pull(path)))
+  {
+    print(i)
+    dum =  read_tsv(i) %>% 
+      select(cluster_id,gene_name1,gene_name2) %>% 
+      mutate(gene_name1 = (strsplit(gene_name1, "[.]"))
+             , gene_name2 = (strsplit(gene_name2, "[.]"))) %>% 
+      mutate(g1 = unlist(lapply(gene_name1, function(x)(x[1])))
+             , g2 = unlist(lapply(gene_name2, function(x)(x[1])))) %>%
+      group_by(cluster_id) %>%
+      mutate(fusion = list(sort(c(g1,g2)))
+             ,fusion_gene = paste0(unlist(fusion)[1]
+                                   ,"_"
+                                   ,unlist(fusion)[2])
+      ) %>%
+      mutate(path = i) %>% 
+      group_by() %>%
+      select(path,fusion_gene)
+    dum2 = rbind(dum2,dum)
+    
+  }
+ 
+  #selected fusion presented in both replicated for each cell lines
+  gene_fusion = dum2 %>% 
+                  group_by() %>% 
+                  filter(complete.cases(.))  %>% 
+                  left_join(.
+                            ,(mat.fl.fusion %>% filter(type %in% "tsv") %>%
+                                select(path,project,cellline))) %>% 
+                  filter(complete.cases(.)) %>% 
+                  group_by(cellline) %>% 
+                  select(-path) %>%
+                  group_by(cellline
+                           ,fusion_gene) %>% distinct() %>%
+                  mutate(l = length(project)) %>%
+                  filter(l >= 2) %>% 
+                  select(-project)  %>% 
+                  group_by(cellline) %>%
+                  distinct()
+                
+    write.csv(gene_fusion
+              ,file = paste0(fl.output,"/gene_fusion_16celllines_Final_",Sys.Date(),".csv"))
+  
+    
+  
+  
+##################################################  
+```
+

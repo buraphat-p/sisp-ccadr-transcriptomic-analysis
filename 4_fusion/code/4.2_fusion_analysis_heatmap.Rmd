@@ -1,0 +1,162 @@
+---
+title: "4_fusion_analysis_heatmap"
+output: html_notebook
+---
+
+###set workspace and library###
+```{r}
+############4_fusion_analysis_heatmap###########
+##################################################
+
+  graphics.off()
+  rm(list=ls())
+  glob_wd = "D:/Google Drive/CCA-DR project/Github"
+  #glob_wd = "/Users/Pongsakorn/Google Drive/CCA-DR project"
+  setwd(glob_wd)
+  set.seed(1234)
+  
+  path = "/4_fusion"
+  wd = "/sisp-ccadr-transcriptomic-analysis"
+  my_wd = paste(glob_wd,wd,path,sep = "")
+  fl.output = paste(my_wd,"/output",sep = "")
+  fl.input = paste0(my_wd,"/input")
+  set.seed(1234)
+  
+##################################################  
+######################library##################### 
+##################################################  
+
+  library("openxlsx")
+  library("dplyr")
+  library("tidyverse")
+  library("tidyr")
+  library("psych")
+  library("caret")
+  library("readr")
+  library("ggpubr")
+  library("pheatmap")
+  
+##################################################  
+```
+
+###load metadata###
+```{r}
+##################################################  
+####################meta_data##################### 
+##################################################  
+  
+  metadata_master = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                         ,"/_metadata/"
+                                                         ,"metadata_master"
+                                                         ,".xlsx")))
+  metadata_cellline = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_cellline"
+                                                           ,".xlsx")))
+  
+  metadata_basepair = as.tibble(openxlsx::read.xlsx(paste0(fl.input
+                                                           ,"/_metadata/"
+                                                           ,"metadata_basepair"
+                                                           ,".xlsx")))
+  
+################################################## 
+```
+
+###load data from 4.1###
+```{r}
+##################################################  
+######################load########################
+################################################## 
+
+  #load gene fusion in cca
+  gene_fusion = read_csv(paste0(fl.output
+                                ,"/gene_fusion_16celllines_Final_2019-06-01.csv")) %>% 
+                  select(-X1) %>% distinct()
+  
+##################################################  
+```
+
+###map with tumorfusion###
+```{r}
+##################################################
+##################tumorfusion#####################      
+##################################################
+    #Oncogene. 2015 September 10; 34(37): 4845-4854.
+    #http://www.tumorfusions.org/ at 20190214
+      
+    tumorfusion = read_delim(paste0(fl.input,"/pancanfus.txt")
+                            ,delim = "\t") 
+      
+    tumorfusion_sel = tumorfusion %>% 
+                  select(Gene_A, Gene_B) %>% 
+                  distinct() %>% 
+                  group_by(Gene_A,Gene_B) %>%
+                  mutate(st = list(sort(c(Gene_A,Gene_B)))) %>%
+                  mutate(fusion_gene = paste0(unlist(st)[1],"_",unlist(st)[2])) %>%
+                  group_by() %>%
+                  select(fusion_gene) %>%
+                  distinct() 
+      
+    dum = gene_fusion %>% 
+            filter(fusion_gene %in% 
+                     tumorfusion_sel$fusion_gene) %>% 
+            group_by(fusion_gene) %>% 
+            mutate(sum = length(cellline), n =2) %>% 
+            select(-l) %>% 
+            spread(.,key = cellline, value = n) %>% 
+            arrange(desc(sum),fusion_gene)
+      
+    write.csv(dum
+              ,file = paste0(fl.output
+                             ,"/gene_fusion_16celllines_mapped_with_tumorfusions_",Sys.Date(),".csv"))
+    
+    #pheatmap for all fusion
+    
+    dum2 = dum %>% 
+            select(-sum) %>% 
+            gather(key = cellline, value = value,-fusion_gene) %>% 
+            mutate(value = as.numeric(!is.na(value))) %>% 
+            spread(key = cellline, value = value) %>%
+            group_by()
+    dum3 = as.data.frame(dum2 %>% select(-fusion_gene))
+    rownames(dum3) = dum2$fusion_gene
+    
+    dum4 = c(setdiff(metadata_cellline %>% 
+                       filter(organ %in% "cholang") %>% 
+                       filter(cellline != "TYBDC-1") %>% 
+                       pull(cellline),colnames(dum3)))
+    dum5 = matrix(0,nrow = dim(dum3)[1] ,ncol = length(dum4))
+    colnames(dum5) = dum4
+    rownames(dum5) = rownames(dum3)
+    
+    dum6 = cbind(dum3,dum5)
+    library("pheatmap")
+    
+    p = pheatmap(dum6[names(sort(apply(dum6
+                                       , 1
+                                       ,  sum),decreasing = TRUE))
+                      ,sort(colnames(dum6))]
+                 ,cluster_rows = FALSE,cluster_cols = FALSE
+                 ,color = c("white","green"))
+    
+    pdf(file = paste0(fl.output,"/Supplementary Figure Supl.fig_PB_",Sys.Date(),".all.fus_(with_MMNK1).pdf"))
+    p
+    dev.off()
+    
+    write.csv(dum6,paste0(fl.output,"/all_fusion_Oncogene.2015-all.fus_(with_MMNK1)_",Sys.Date(),".csv"))
+    
+    dum7= dum6[,which(colnames(dum6) != "MMNK-1")]
+    p = pheatmap(dum7[names(sort(apply(dum7
+                                       , 1
+                                       ,  sum),decreasing = TRUE))
+                      ,sort(colnames(dum7))]
+                 ,cluster_rows = FALSE,cluster_cols = FALSE
+                 ,color = c("white","green"))
+    
+    pdf(file = paste0(fl.output,"/Supplementary Figure Supl.fig_PB_",Sys.Date(),".all.fus_(without_MMNK1).pdf"))
+    p
+    dev.off()
+    
+##################################################
+```
+
